@@ -1,6 +1,7 @@
 import "./globals.css";
 import type { Metadata } from "next";
 import { Inter, Fraunces } from "next/font/google";
+import { Suspense } from "react";
 import GtmBridge from "./components/GtmBridge";
 import SiteShell from "../components/layout/SiteShell";
 import { CartProvider } from "@/components/cart/CartProvider";
@@ -36,7 +37,9 @@ export default function RootLayout({
     >
       <body className="min-h-screen bg-nf-bg text-nf-text antialiased">
         <CartProvider>
-          <GtmBridge />
+          <Suspense fallback={null}>
+            <GtmBridge />
+          </Suspense>
           <SiteShell>{children}</SiteShell>
         </CartProvider>
       </body>
