@@ -4,41 +4,46 @@ import { useEffect } from "react";
 
 export default function IframeResizer() {
   useEffect(() => {
-    if (typeof window === "undefined") return;
-
-    // Add a CSS hook when embedded (?embed=1)
-    const params = new URLSearchParams(window.location.search);
-    const isEmbedded = params.get("embed") === "1";
-    if (isEmbedded) {
-      document.documentElement.classList.add("embed");
+    // Only run when embedded
+    let inIframe = false;
+    try {
+      inIframe = window.self !== window.top;
+    } catch {
+      inIframe = true;
     }
+    if (!inIframe) return;
 
-    // Post height to parent for iframe auto-resize
+    let raf = 0;
+
     const postHeight = () => {
-      const h = Math.max(
-        document.documentElement.scrollHeight,
-        document.body?.scrollHeight ?? 0,
-        document.documentElement.offsetHeight,
-        document.body?.offsetHeight ?? 0
-      );
-      window.parent?.postMessage({ type: "tstore:height", height: h }, "*");
+      cancelAnimationFrame(raf);
+      raf = requestAnimationFrame(() => {
+        const height = Math.max(
+          document.documentElement.scrollHeight,
+          document.body?.scrollHeight ?? 0
+        );
+
+        window.parent.postMessage(
+          { type: "NF_IFRAME_HEIGHT", height },
+          "*"
+        );
+      });
     };
 
-    let timer: number | undefined;
-    const onResize = () => {
-      if (timer) window.clearTimeout(timer);
-      timer = window.setTimeout(postHeight, 100);
-    };
-
-    // initial + events
     postHeight();
+
+    const ro = new ResizeObserver(() => postHeight());
+    ro.observe(document.documentElement);
+    if (document.body) ro.observe(document.body);
+
     window.addEventListener("load", postHeight);
-    window.addEventListener("resize", onResize);
+    window.addEventListener("resize", postHeight);
 
     return () => {
+      cancelAnimationFrame(raf);
+      ro.disconnect();
       window.removeEventListener("load", postHeight);
-      window.removeEventListener("resize", onResize);
-      if (timer) window.clearTimeout(timer);
+      window.removeEventListener("resize", postHeight);
     };
   }, []);
 

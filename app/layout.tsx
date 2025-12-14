@@ -5,6 +5,7 @@ import { Suspense } from "react";
 import GtmBridge from "./components/GtmBridge";
 import SiteShell from "../components/layout/SiteShell";
 import { CartProvider } from "@/components/cart/CartProvider";
+import IframeResizer from "@/components/IframeResizer";
 
 const inter = Inter({
   subsets: ["latin"],
@@ -39,6 +40,7 @@ export default function RootLayout({
         <CartProvider>
           <Suspense fallback={null}>
             <GtmBridge />
+            <IframeResizer />
           </Suspense>
           <SiteShell>{children}</SiteShell>
         </CartProvider>
