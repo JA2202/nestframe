@@ -15,6 +15,36 @@ export type FalImageGenParams = {
   seed?: number;
 };
 
+// ---------- Fix fal birefnet model typing (avoid plain `string`) ----------
+const BIREFNET_MODELS = [
+  "General Use (Light)",
+  "General Use (Light 2K)",
+  "General Use (Heavy)",
+  "Matting",
+  "Portrait",
+] as const;
+
+type BiRefNetModel = (typeof BIREFNET_MODELS)[number];
+
+function coerceBiRefNetModel(value: unknown): BiRefNetModel {
+  const v = String(value ?? "");
+  return (BIREFNET_MODELS as readonly string[]).includes(v)
+    ? (v as BiRefNetModel)
+    : "General Use (Light)";
+}
+
+const BIREFNET_OPERATING_RESOLUTIONS = ["1024x1024", "2048x2048"] as const;
+type BiRefNetOperatingResolution = (typeof BIREFNET_OPERATING_RESOLUTIONS)[number];
+
+function coerceBiRefNetOperatingResolution(
+  value: unknown
+): BiRefNetOperatingResolution {
+  const v = String(value ?? "");
+  return (BIREFNET_OPERATING_RESOLUTIONS as readonly string[]).includes(v)
+    ? (v as BiRefNetOperatingResolution)
+    : "1024x1024";
+}
+
 // ---------- Narrow response shapes (no `any`) ----------
 type Imagen4ImageItem = { url?: string };
 type Imagen4FastData = { images?: Imagen4ImageItem[] };
@@ -136,11 +166,13 @@ export async function falGenerateImagen4Fast(
 export async function falRemoveBackground(imageUrl: string): Promise<string> {
   if (!FAL_CONFIGURED) throw new Error("FAL_KEY is not configured");
 
-  const model =
-    process.env.FAL_BIREFNET_MODEL ||
-    "General Use (Light)"; // "Matting" | "Portrait" | "General Use (Light)" | "General Use (Heavy)"
-  const operating_resolution =
-    process.env.FAL_OPERATING_RESOLUTION || "1024x1024"; // or "2048x2048"
+  const model = coerceBiRefNetModel(
+    process.env.FAL_BIREFNET_MODEL || "General Use (Light)"
+  );
+
+  const operating_resolution = coerceBiRefNetOperatingResolution(
+    process.env.FAL_OPERATING_RESOLUTION || "1024x1024"
+  );
 
   const raw = await fal.subscribe("fal-ai/birefnet/v2", {
     input: {
