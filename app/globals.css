@@ -1,26 +1,62 @@
 @import "tailwindcss";
 
+@theme {
+  --color-nf-primary: #B9794B;
+  --color-nf-primary-soft: #F3E2D4;
+  --color-nf-bg: #F7F3ED;
+  --color-nf-surface: #FFFFFF;
+  --color-nf-border: #E2D7C8;
+  --color-nf-text: #222222;
+  --color-nf-text-muted: #6F6A63;
+  --color-nf-ink: #2E2A26;
+  --color-nf-secondary: #1E4941;
+  --color-nf-success: #3E7F4C;
+  --color-nf-warning: #C58B3A;
+  --color-nf-error: #B4493D;
+  --color-nf-grey-100: #F4F4F4;
+  --color-nf-grey-300: #D6D3CF;
+  --color-nf-grey-700: #4A4742;
+}
+
 :root {
-  --background: #ffffff;
-  --foreground: #171717;
+  --font-inter: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI",
+    sans-serif;
+  --font-fraunces: "Fraunces", "Times New Roman", serif;
 }
 
-@theme inline {
-  --color-background: var(--background);
-  --color-foreground: var(--foreground);
-  --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
-}
-
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
-  }
-}
-
+/* Body uses Inter by default */
 body {
-  background: var(--background);
-  color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+  font-family: var(--font-inter);
+  background-color: var(--color-nf-bg);
+  color: var(--color-nf-text);
+}
+
+/* Headings + anything with font-heading use Fraunces */
+h1,
+h2,
+h3,
+h4,
+h5,
+h6,
+.font-heading {
+  font-family: var(--font-fraunces);
+  letter-spacing: -0.02em;
+}
+
+/* Basic link styling */
+a {
+  color: inherit;
+  text-decoration: none;
+}
+
+a:hover {
+  text-decoration: underline;
+}
+
+/* Smooth out buttons and inputs */
+button,
+input,
+select,
+textarea {
+  font-family: inherit;
 }
