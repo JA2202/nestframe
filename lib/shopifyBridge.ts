@@ -25,6 +25,20 @@ export function addToShopifyCart(
     }
   })();
 
+  // FIX: ensure a preview URL is always passed via line item properties (derived from nf_art_id)
+  const itemsWithPreview: ShopifyCartItem[] = items.map((item) => {
+    const props: Record<string, string> = { ...(item.properties ?? {}) };
+
+    if (!props.nf_preview_url) {
+      const artId = props.nf_art_id;
+      if (artId) {
+        props.nf_preview_url = `${window.location.origin}/api/generated-art/${artId}/preview`;
+      }
+    }
+
+    return { ...item, properties: props };
+  });
+
   return new Promise<void>((resolve, reject) => {
     const timeout = window.setTimeout(() => {
       cleanup();
@@ -52,7 +66,7 @@ export function addToShopifyCart(
       {
         type: "NF_ADD_TO_CART",
         requestId,
-        items,
+        items: itemsWithPreview,
         redirectToCheckout: !!opts?.redirectToCheckout,
         redirectToCart: !!opts?.redirectToCart,
       },
