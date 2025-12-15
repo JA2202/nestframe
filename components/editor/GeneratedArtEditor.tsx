@@ -13,9 +13,15 @@ type Props = {
   imageUrl: string;
   initialCrop: unknown;
   initialShape: unknown;
+
+  // New: restore saved config when re-opening the editor
+  initialSize?: unknown;
+  initialFrameColour?: unknown;
+  initialPrintType?: unknown;
 };
 
-type FrameColour = "oak" | "walnut" | "black" | "white";
+type PrintType = "FRAMED_PRINT" | "PRINT_ONLY" | "CANVAS";
+type FrameColour = "black" | "white" | "none";
 
 type SizeOption = {
   value: string;
@@ -29,49 +35,88 @@ function shapeToAspect(shape: Shape): number {
   return 1;
 }
 
-const SIZE_OPTIONS: Record<Shape, SizeOption[]> = {
-  // Keep ratios aligned with generation shapes to minimise heavy cropping
-  tall: [
-    { value: "30x45", label: "30 × 45 cm", helper: "Great for small spaces" },
-    { value: "40x60", label: "40 × 60 cm", helper: "Most popular" },
-    { value: "50x75", label: "50 × 75 cm", helper: "Statement piece" },
-    { value: "60x90", label: "60 × 90 cm", helper: "Big impact" },
+function parseSizeKey(value: string): { w: number; h: number } | null {
+  const m = /^(\d+)\s*x\s*(\d+)$/.exec(value.trim());
+  if (!m) return null;
+  const w = Number(m[1]);
+  const h = Number(m[2]);
+  if (!Number.isFinite(w) || !Number.isFinite(h) || w <= 0 || h <= 0) return null;
+  return { w, h };
+}
+
+function formatSizeLabel(size: string, shape: Shape): string {
+  const dims = parseSizeKey(size);
+  if (!dims) return size;
+
+  const { w, h } = dims;
+
+  if (shape === "wide") return `${h}" × ${w}"`;
+  return `${w}" × ${h}"`;
+}
+
+function aspectForSize(size: string, shape: Shape): number {
+  const dims = parseSizeKey(size);
+  if (!dims) return shapeToAspect(shape);
+
+  const { w, h } = dims;
+  if (w === h) return 1;
+
+  // For "wide" we treat the print as rotated (landscape)
+  if (shape === "wide") return h / w;
+  return w / h;
+}
+
+const SIZES_BY_PRINT_TYPE: Record<PrintType, string[]> = {
+  FRAMED_PRINT: ["8x10", "10x10", "11x14", "12x16", "12x18", "18x24", "24x36"],
+  PRINT_ONLY: [
+    "8x10",
+    "10x10",
+    "11x14",
+    "12x12",
+    "12x16",
+    "12x18",
+    "14x14",
+    "16x16",
+    "16x20",
+    "18x18",
+    "18x24",
+    "20x30",
+    "24x36",
   ],
-  wide: [
-    { value: "45x30", label: "45 × 30 cm", helper: "Great above shelves" },
-    { value: "60x40", label: "60 × 40 cm", helper: "Most popular" },
-    { value: "75x50", label: "75 × 50 cm", helper: "Statement piece" },
-    { value: "90x60", label: "90 × 60 cm", helper: "Big impact" },
-  ],
-  square: [
-    { value: "30x30", label: "30 × 30 cm", helper: "Great for gallery walls" },
-    { value: "40x40", label: "40 × 40 cm", helper: "Most popular" },
-    { value: "50x50", label: "50 × 50 cm", helper: "Statement piece" },
-    { value: "60x60", label: "60 × 60 cm", helper: "Big impact" },
+  CANVAS: [
+    "8x10",
+    "9x12",
+    "11x14",
+    "12x12",
+    "12x16",
+    "12x18",
+    "16x16",
+    "16x20",
+    "18x24",
+    "20x28",
+    "20x30",
+    "24x32",
+    "24x36",
   ],
 };
 
-const FRAME_OPTIONS: { value: FrameColour; label: string; swatchClass: string }[] =
+const FRAME_OPTIONS: { value: Exclude<FrameColour, "none">; label: string; swatchClass: string }[] =
   [
-    { value: "oak", label: "Natural oak", swatchClass: "bg-[#C9A87A]" },
-    { value: "walnut", label: "Walnut", swatchClass: "bg-[#7A4E2A]" },
-    { value: "black", label: "Black", swatchClass: "bg-[#1F1F1F]" },
-    { value: "white", label: "White", swatchClass: "bg-white" },
+    { value: "black", label: "Black Oak", swatchClass: "bg-[#1F1F1F]" },
+    { value: "white", label: "White Oak", swatchClass: "bg-white" },
   ];
 
-// Simple pricing placeholder for now (GBP). Can be swapped to Printful/Shopify-driven pricing later.
+// Simple pricing placeholder for now (GBP). Real pricing is Shopify at checkout.
 const PRICE_BY_SIZE_GBP: Record<string, number> = {
-  // tall
+  // Existing cm keys (kept)
   "30x45": 39,
   "40x60": 49,
   "50x75": 69,
   "60x90": 89,
-  // wide
   "45x30": 39,
   "60x40": 49,
   "75x50": 69,
   "90x60": 89,
-  // square
   "30x30": 35,
   "40x40": 45,
   "50x50": 65,
@@ -90,26 +135,96 @@ function formatGBP(amount: number): string {
   }
 }
 
+function coercePrintType(v: unknown): PrintType | null {
+  if (v === "FRAMED_PRINT" || v === "PRINT_ONLY" || v === "CANVAS") return v;
+  return null;
+}
+
+function coerceFrameColour(v: unknown): FrameColour | null {
+  if (v === "black" || v === "white" || v === "none") return v;
+  // Back-compat: previously defaulted "oak" in UI, treat it as White Oak for framed
+  if (v === "oak") return "white";
+  return null;
+}
+
+function coerceSize(v: unknown): string | null {
+  return typeof v === "string" && v.trim() ? v.trim() : null;
+}
+
 export default function GeneratedArtEditor({
   id,
   imageUrl,
   initialCrop,
   initialShape,
+  initialSize,
+  initialFrameColour,
+  initialPrintType,
 }: Props) {
   const router = useRouter();
   const optionsRef = useRef<HTMLDivElement | null>(null);
 
   const shapeFromDb: Shape | null =
-    initialShape === "wide" ||
-    initialShape === "tall" ||
-    initialShape === "square"
+    initialShape === "wide" || initialShape === "tall" || initialShape === "square"
       ? (initialShape as Shape)
       : null;
 
   const initialShapeState: Shape = shapeFromDb ?? "square";
 
+  const savedPrintType = coercePrintType(initialPrintType);
+  const savedSize = coerceSize(initialSize);
+  const savedFrame = coerceFrameColour(initialFrameColour);
+
   const [shape, setShape] = useState<Shape>(initialShapeState);
-  const [aspect, setAspect] = useState<number>(shapeToAspect(initialShapeState));
+
+  const [printType, setPrintType] = useState<PrintType>(savedPrintType ?? "FRAMED_PRINT");
+  const [frameColour, setFrameColour] = useState<FrameColour>(() => {
+    const pt = savedPrintType ?? "FRAMED_PRINT";
+    if (pt !== "FRAMED_PRINT") return "none";
+    if (savedFrame === "black" || savedFrame === "white") return savedFrame;
+    return "white";
+  });
+
+  const sizeOptions = useMemo<SizeOption[]>(() => {
+    const raw = SIZES_BY_PRINT_TYPE[printType] ?? [];
+
+    const filtered =
+      shape === "square"
+        ? raw.filter((s) => {
+            const d = parseSizeKey(s);
+            return !!d && d.w === d.h;
+          })
+        : raw.filter((s) => {
+            const d = parseSizeKey(s);
+            return !!d && d.w !== d.h;
+          });
+
+    return filtered.map((s) => ({
+      value: s,
+      label: formatSizeLabel(s, shape),
+    }));
+  }, [printType, shape]);
+
+  const [size, setSize] = useState<string>(() => {
+    // Prefer restored size if it exists in current option set
+    const pt = savedPrintType ?? "FRAMED_PRINT";
+    const raw = SIZES_BY_PRINT_TYPE[pt] ?? [];
+    const initialCandidate = savedSize && raw.includes(savedSize) ? savedSize : raw[0] ?? "";
+
+    // Apply shape filter (square vs non-square) to pick a valid default
+    const isValidForShape = (s: string) => {
+      const d = parseSizeKey(s);
+      if (!d) return false;
+      if (shapeFromDb === "square" || (!shapeFromDb && initialShapeState === "square")) return d.w === d.h;
+      return d.w !== d.h;
+    };
+
+    if (initialCandidate && isValidForShape(initialCandidate)) return initialCandidate;
+
+    const fallback = raw.find(isValidForShape);
+    return fallback ?? "";
+  });
+
+  const [aspect, setAspect] = useState<number>(aspectForSize(size, initialShapeState));
 
   const [crop, setCrop] = useState<{ x: number; y: number }>({ x: 0, y: 0 });
   const [zoom, setZoom] = useState<number>(1);
@@ -120,11 +235,6 @@ export default function GeneratedArtEditor({
   const [addedMsg, setAddedMsg] = useState<string | null>(null);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
 
-  const [size, setSize] = useState<string>(
-    SIZE_OPTIONS[initialShapeState][0]?.value ?? ""
-  );
-  const [frameColour, setFrameColour] = useState<FrameColour>("oak");
-
   const scrollToOptions = () => {
     optionsRef.current?.scrollIntoView({
       behavior: "smooth",
@@ -132,7 +242,7 @@ export default function GeneratedArtEditor({
     });
   };
 
-  // Infer aspect from the actual generated image (works for base64 + hosted URLs)
+  // Infer shape from the actual generated image (works for base64 + hosted URLs)
   useEffect(() => {
     const img = new Image();
     img.src = imageUrl;
@@ -144,19 +254,32 @@ export default function GeneratedArtEditor({
         if (!shapeFromDb) {
           const inferred: Shape = a > 1.2 ? "wide" : a < 0.85 ? "tall" : "square";
           setShape(inferred);
-          setAspect(shapeToAspect(inferred));
         }
       }
     };
   }, [imageUrl, shapeFromDb]);
 
-  // Keep size valid when shape changes (layout buttons or inferred)
+  // Ensure frameColour matches printType
   useEffect(() => {
-    const opts = SIZE_OPTIONS[shape] ?? [];
-    if (!opts.some((o) => o.value === size)) {
-      setSize(opts[0]?.value ?? "");
+    if (printType !== "FRAMED_PRINT") {
+      if (frameColour !== "none") setFrameColour("none");
+      return;
     }
-  }, [shape, size]);
+    if (frameColour === "none") setFrameColour("white");
+  }, [printType, frameColour]);
+
+  // Keep size valid when printType/shape changes
+  useEffect(() => {
+    if (!sizeOptions.some((o) => o.value === size)) {
+      setSize(sizeOptions[0]?.value ?? "");
+    }
+  }, [sizeOptions, size]);
+
+  // Keep crop aspect aligned to selected size + orientation
+  useEffect(() => {
+    if (!size) return;
+    setAspect(aspectForSize(size, shape));
+  }, [size, shape]);
 
   // Restore crop if present
   useEffect(() => {
@@ -167,8 +290,7 @@ export default function GeneratedArtEditor({
     const a = c.aspect as number | undefined;
     const cap = c.croppedAreaPixels as Area | undefined;
 
-    if (cc && typeof cc.x === "number" && typeof cc.y === "number")
-      setCrop({ x: cc.x, y: cc.y });
+    if (cc && typeof cc.x === "number" && typeof cc.y === "number") setCrop({ x: cc.x, y: cc.y });
     if (typeof z === "number") setZoom(z);
     if (typeof a === "number") setAspect(a);
     if (cap && typeof cap.width === "number") setCroppedAreaPixels(cap);
@@ -179,11 +301,13 @@ export default function GeneratedArtEditor({
   };
 
   const price = useMemo(() => {
-    const base = PRICE_BY_SIZE_GBP[size] ?? 0;
+    const base = PRICE_BY_SIZE_GBP[size] ?? 39;
     return base;
   }, [size]);
 
   const persistCrop = async () => {
+    const priceCents = Math.round((PRICE_BY_SIZE_GBP[size] ?? 39) * 100);
+
     const res = await fetch(`/api/generated-art/${id}/crop`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -194,11 +318,11 @@ export default function GeneratedArtEditor({
         aspect,
         shape,
 
-        // product config (new)
+        // product config
         size,
-        frameColour,
-        printType: "FRAMED_PRINT",
-        priceCents: Math.round((PRICE_BY_SIZE_GBP[size] ?? 0) * 100),
+        frameColour: printType === "FRAMED_PRINT" ? frameColour : null,
+        printType,
+        priceCents,
       }),
     });
 
@@ -242,8 +366,7 @@ export default function GeneratedArtEditor({
       // Ensure crop + config is saved first
       await persistCrop();
 
-      const printType = "FRAMED_PRINT" as const;
-      const priceCents = Math.round((PRICE_BY_SIZE_GBP[size] ?? 0) * 100);
+      const priceCents = Math.round((PRICE_BY_SIZE_GBP[size] ?? 39) * 100);
 
       const variantId = getVariantId({
         printType,
@@ -263,7 +386,7 @@ export default function GeneratedArtEditor({
             properties: {
               nf_art_id: id,
               nf_size: size,
-              nf_frame_colour: frameColour,
+              nf_frame_colour: String(frameColour),
               nf_print_type: printType,
               nf_price_cents: String(priceCents),
             },
@@ -280,11 +403,14 @@ export default function GeneratedArtEditor({
     }
   };
 
-  const sizeOptions = SIZE_OPTIONS[shape] ?? [];
-  const selectedSizeLabel =
-    sizeOptions.find((s) => s.value === size)?.label ?? size;
+  const selectedSizeLabel = sizeOptions.find((s) => s.value === size)?.label ?? size;
+
   const selectedFrameLabel =
-    FRAME_OPTIONS.find((f) => f.value === frameColour)?.label ?? frameColour;
+    printType === "FRAMED_PRINT"
+      ? FRAME_OPTIONS.find((f) => f.value === frameColour)?.label ?? String(frameColour)
+      : printType === "CANVAS"
+      ? "Canvas"
+      : "No frame";
 
   return (
     <div className="min-h-screen bg-nf-bg pb-24 lg:pb-0">
@@ -341,38 +467,38 @@ export default function GeneratedArtEditor({
             <div>
               <h2 className="text-base font-semibold text-nf-text">Make it yours</h2>
               <p className="text-xs text-nf-text-muted mt-1">
-                Choose layout, size and frame, then add to cart.
+                Choose frame type and size, then add to cart.
               </p>
             </div>
 
             <div>
-              <p className="text-xs text-nf-text-muted mb-2">Layout</p>
+              <p className="text-xs text-nf-text-muted mb-2">Frame type</p>
               <div className="grid grid-cols-3 gap-2">
-                {(["tall", "wide", "square"] as Shape[]).map((s) => (
+                {(
+                  [
+                    { value: "PRINT_ONLY" as const, label: "No frame" },
+                    { value: "FRAMED_PRINT" as const, label: "Framed" },
+                    { value: "CANVAS" as const, label: "Canvas" },
+                  ] as const
+                ).map((opt) => (
                   <button
-                    key={s}
+                    key={opt.value}
                     type="button"
-                    onClick={() => {
-                      setShape(s);
-                      setAspect(shapeToAspect(s));
-                    }}
+                    onClick={() => setPrintType(opt.value)}
                     className={`rounded-lg border px-3 py-2 text-sm ${
-                      shape === s
+                      printType === opt.value
                         ? "border-nf-primary bg-nf-primary-soft"
                         : "border-nf-border bg-white hover:bg-nf-grey100"
                     }`}
                   >
-                    {s === "tall" ? "Tall" : s === "wide" ? "Wide" : "Square"}
+                    {opt.label}
                   </button>
                 ))}
               </div>
-              <p className="text-[11px] text-nf-text-muted mt-2">
-                This only changes the crop window. Your original generation stays the same.
-              </p>
             </div>
 
             <div>
-              <p className="text-xs text-nf-text-muted mb-2">Size</p>
+              <p className="text-xs text-nf-text-muted mb-2">Size (inches)</p>
               <div className="grid grid-cols-2 gap-2">
                 {sizeOptions.map((opt) => (
                   <button
@@ -387,37 +513,37 @@ export default function GeneratedArtEditor({
                   >
                     <div className="font-medium text-nf-text">{opt.label}</div>
                     {opt.helper && (
-                      <div className="mt-0.5 text-[11px] text-nf-text-muted">
-                        {opt.helper}
-                      </div>
+                      <div className="mt-0.5 text-[11px] text-nf-text-muted">{opt.helper}</div>
                     )}
                   </button>
                 ))}
               </div>
             </div>
 
-            <div>
-              <p className="text-xs text-nf-text-muted mb-2">Frame colour</p>
-              <div className="grid grid-cols-2 gap-2">
-                {FRAME_OPTIONS.map((opt) => (
-                  <button
-                    key={opt.value}
-                    type="button"
-                    onClick={() => setFrameColour(opt.value)}
-                    className={`rounded-lg border px-3 py-2 text-left text-sm flex items-center gap-3 ${
-                      frameColour === opt.value
-                        ? "border-nf-primary bg-nf-primary-soft"
-                        : "border-nf-border bg-white hover:bg-nf-grey100"
-                    }`}
-                  >
-                    <span
-                      className={`h-5 w-5 rounded-sm border border-nf-border ${opt.swatchClass}`}
-                    />
-                    <span className="font-medium text-nf-text">{opt.label}</span>
-                  </button>
-                ))}
+            {printType === "FRAMED_PRINT" && (
+              <div>
+                <p className="text-xs text-nf-text-muted mb-2">Frame colour</p>
+                <div className="grid grid-cols-2 gap-2">
+                  {FRAME_OPTIONS.map((opt) => (
+                    <button
+                      key={opt.value}
+                      type="button"
+                      onClick={() => setFrameColour(opt.value)}
+                      className={`rounded-lg border px-3 py-2 text-left text-sm flex items-center gap-3 ${
+                        frameColour === opt.value
+                          ? "border-nf-primary bg-nf-primary-soft"
+                          : "border-nf-border bg-white hover:bg-nf-grey100"
+                      }`}
+                    >
+                      <span
+                        className={`h-5 w-5 rounded-sm border border-nf-border ${opt.swatchClass}`}
+                      />
+                      <span className="font-medium text-nf-text">{opt.label}</span>
+                    </button>
+                  ))}
+                </div>
               </div>
-            </div>
+            )}
 
             <div className="border-t border-nf-border pt-4 space-y-3">
               <div className="flex items-start justify-between">
@@ -472,9 +598,7 @@ export default function GeneratedArtEditor({
 
           <div className="flex-1 min-w-0">
             <p className="text-[11px] text-nf-text-muted">Total</p>
-            <p className="text-sm font-semibold text-nf-text truncate">
-              {formatGBP(price)}
-            </p>
+            <p className="text-sm font-semibold text-nf-text truncate">{formatGBP(price)}</p>
           </div>
 
           <button

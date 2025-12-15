@@ -12,7 +12,7 @@ type CropBody = {
   // Optional product config (only persisted if provided)
   size?: string | null;
   frameColour?: "oak" | "walnut" | "black" | "white" | null;
-  printType?: "PRINT_ONLY" | "FRAMED_PRINT" | null;
+  printType?: "PRINT_ONLY" | "FRAMED_PRINT" | "CANVAS" | null;
   priceCents?: number | null;
 };
 
@@ -53,10 +53,7 @@ export async function POST(
     }
 
     const supabase = supabaseAdmin();
-    const { error } = await supabase
-      .from("generated_art")
-      .update(updatePayload)
-      .eq("id", id);
+    const { error } = await supabase.from("generated_art").update(updatePayload).eq("id", id);
 
     if (error) {
       console.error(error);

@@ -15,7 +15,7 @@ export default async function EditPage({
   const supabase = supabaseAdmin();
   const { data, error } = await supabase
     .from("generated_art")
-    .select("id, image_url, crop, shape")
+    .select("id, image_url, crop, shape, size, frame_colour, print_type")
     .eq("id", id)
     .single();
 
@@ -38,6 +38,9 @@ export default async function EditPage({
       imageUrl={data.image_url as string}
       initialCrop={(data as { crop: unknown }).crop ?? null}
       initialShape={(data as { shape: unknown }).shape ?? null}
+      initialSize={(data as { size?: unknown }).size ?? null}
+      initialFrameColour={(data as { frame_colour?: unknown }).frame_colour ?? null}
+      initialPrintType={(data as { print_type?: unknown }).print_type ?? null}
     />
   );
 }
