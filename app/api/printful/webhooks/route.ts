@@ -1,8 +1,28 @@
 // app/api/printful/webhooks/route.ts
 import { NextResponse } from "next/server";
+import crypto from "crypto";
 import { createShopifyFulfillmentForOrder } from "@/lib/shopifyFulfillment";
 
 export const runtime = "nodejs";
+
+function timingSafeEqualUtf8(a: string, b: string) {
+  const ba = Buffer.from(a, "utf8");
+  const bb = Buffer.from(b, "utf8");
+  if (ba.length !== bb.length) return false;
+  return crypto.timingSafeEqual(ba, bb);
+}
+
+function verifyPrintfulSignature(rawBody: string, signatureHeader: string | null, secret: string) {
+  if (!signatureHeader) return false;
+
+  // Common patterns: raw hex, base64, or "sha256=<hex>"
+  const incoming = signatureHeader.replace(/^sha256=/i, "").trim();
+
+  const hmacHex = crypto.createHmac("sha256", secret).update(rawBody, "utf8").digest("hex");
+  const hmacBase64 = crypto.createHmac("sha256", secret).update(rawBody, "utf8").digest("base64");
+
+  return timingSafeEqualUtf8(incoming, hmacHex) || timingSafeEqualUtf8(incoming, hmacBase64);
+}
 
 function pickFirstString(...vals: any[]): string | null {
   for (const v of vals) {
@@ -32,7 +52,9 @@ function externalIdToShopifyOrderId(externalId: string): number | null {
   return Number.isFinite(n) ? n : null;
 }
 
-function extractTracking(payload: any): { number: string; company?: string | null; url?: string | null } | null {
+function extractTracking(
+  payload: any
+): { number: string; company?: string | null; url?: string | null } | null {
   const trackingNumber = pickFirstString(
     payload?.data?.shipment?.tracking_number,
     payload?.data?.shipment?.trackingNumber,
@@ -74,29 +96,60 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: "Missing PRINTFUL_WEBHOOK_TOKEN" }, { status: 500 });
     }
 
-    const url = new URL(req.url);
-    const token = url.searchParams.get("token");
+    const urlObj = new URL(req.url);
+    const token = urlObj.searchParams.get("token");
     if (token !== expectedToken) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 
-    const payload = await req.json().catch(() => ({}));
+    const secret = process.env.PRINTFUL_WEBHOOK_SECRET;
+    if (!secret) {
+      return NextResponse.json({ error: "Missing PRINTFUL_WEBHOOK_SECRET" }, { status: 500 });
+    }
+
+    const rawBody = await req.text();
+
+    const sig =
+      req.headers.get("x-pf-signature") ??
+      req.headers.get("x-printful-signature") ??
+      req.headers.get("x-webhook-signature");
+
+    if (!verifyPrintfulSignature(rawBody, sig, secret)) {
+      return NextResponse.json({ error: "Invalid webhook signature" }, { status: 401 });
+    }
+
+    const payload = (() => {
+      try {
+        return JSON.parse(rawBody);
+      } catch {
+        return {};
+      }
+    })();
 
     const externalId = extractExternalId(payload);
     if (!externalId) {
       // Not an order we can map
-      return NextResponse.json({ ok: true, skipped: true, reason: "no_external_id" }, { status: 200 });
+      return NextResponse.json(
+        { ok: true, skipped: true, reason: "no_external_id" },
+        { status: 200 }
+      );
     }
 
     const shopifyOrderId = externalIdToShopifyOrderId(externalId);
     if (!shopifyOrderId) {
-      return NextResponse.json({ ok: true, skipped: true, reason: "external_id_not_shopify" }, { status: 200 });
+      return NextResponse.json(
+        { ok: true, skipped: true, reason: "external_id_not_shopify" },
+        { status: 200 }
+      );
     }
 
     const tracking = extractTracking(payload);
     if (!tracking) {
       // Many Printful events do not include tracking yet. Ignore until shipped.
-      return NextResponse.json({ ok: true, skipped: true, reason: "no_tracking_yet" }, { status: 200 });
+      return NextResponse.json(
+        { ok: true, skipped: true, reason: "no_tracking_yet" },
+        { status: 200 }
+      );
     }
 
     const result = await createShopifyFulfillmentForOrder({

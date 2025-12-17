@@ -87,7 +87,7 @@ export async function POST(req: Request) {
     for (const { li, props } of nfItems) {
       const artId = props.nf_art_id;
       const printType = props.nf_print_type; // "FRAMED_PRINT" | "PRINT_ONLY" | "CANVAS"
-      const size = props.nf_size; // e.g. "18x24"
+      const size = props.nf_size;            // e.g. "18x24"
       const frameColour = props.nf_frame_colour ?? null;
 
       const catalogVariantId = getPrintfulCatalogVariantId({
@@ -135,25 +135,24 @@ export async function POST(req: Request) {
       });
     }
 
-    const created = await createDraftOrderV2({
-      external_id: externalId,
-      recipient,
-      order_items,
-    });
+    let created: any;
+    try {
+      created = await createDraftOrderV2({
+        external_id: externalId,
+        recipient,
+        order_items,
+      });
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : String(e);
+      if (/external_id must be unique/i.test(msg) || /External ID validation error/i.test(msg)) {
+        return NextResponse.json({ ok: true, skipped: true }, { status: 200 });
+      }
+      throw e;
+    }
 
     return NextResponse.json({ ok: true, printfulOrder: created }, { status: 200 });
   } catch (err) {
     console.error(err);
-
-    const msg = err instanceof Error ? err.message : String(err);
-    if (
-      msg.includes("External ID validation error") ||
-      msg.includes("external_id must be unique") ||
-      msg.includes("already used")
-    ) {
-      return NextResponse.json({ ok: true, skipped: true }, { status: 200 });
-    }
-
     return NextResponse.json(
       { error: err instanceof Error ? err.message : "Webhook processing failed" },
       { status: 500 }
