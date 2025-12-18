@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState, type ReactNode } from "react";
+import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { useRouter } from "next/navigation";
 import {
   ArrowLeft,
@@ -350,6 +350,15 @@ function StickyFooter({
 export default function CreatePage() {
   const router = useRouter();
 
+  const [embedMode] = useState(() => {
+    if (typeof window === "undefined") return false;
+    return new URLSearchParams(window.location.search).get("embed") === "1";
+  });
+
+  const parentOriginRef = useRef<string>("*");
+  const handleNextRef = useRef<() => void>(() => {});
+  const handleBackRef = useRef<() => void>(() => {});
+
   const [screen, setScreen] = useState<Screen>("wizard");
   const [step3Stage, setStep3Stage] = useState<Step3Stage>("mood");
 
@@ -434,6 +443,40 @@ export default function CreatePage() {
 
     if (step > 1) setStep((s) => (s - 1) as Step);
   };
+
+  handleNextRef.current = handleNext;
+  handleBackRef.current = handleBack;
+
+  useEffect(() => {
+    if (!embedMode) return;
+
+    try {
+      parentOriginRef.current = document.referrer ? new URL(document.referrer).origin : "*";
+    } catch {
+      parentOriginRef.current = "*";
+    }
+
+    const onMessage = (event: MessageEvent) => {
+      if (parentOriginRef.current !== "*" && event.origin !== parentOriginRef.current) return;
+
+      const data = event.data as any;
+      if (!data || typeof data !== "object") return;
+
+      if (data.type === "NF_CTA_NEXT") {
+        handleNextRef.current();
+      }
+
+      if (data.type === "NF_CTA_BACK") {
+        handleBackRef.current();
+      }
+    };
+
+    window.addEventListener("message", onMessage);
+
+    window.parent?.postMessage({ type: "NF_EMBED_READY" }, parentOriginRef.current);
+
+    return () => window.removeEventListener("message", onMessage);
+  }, [embedMode]);
 
   const handleGenerate = async () => {
     setErrorMsg(null);
@@ -558,8 +601,7 @@ export default function CreatePage() {
       setSelectedId(id || null);
       setScreen("results");
     } catch (err) {
-      const message =
-        err instanceof Error ? err.message : "Failed to generate art. Please try again.";
+      const message = err instanceof Error ? err.message : "Failed to generate art. Please try again.";
       setErrorMsg(message);
     } finally {
       setLoading(false);
@@ -574,6 +616,27 @@ export default function CreatePage() {
   const canProceed = !!selectedId && !loading;
 
   const primaryCtaLabel = screen === "results" ? "Proceed" : step === 4 ? "Create my art" : "Next";
+
+  useEffect(() => {
+    if (!embedMode) return;
+
+    const label =
+      screen === "results" ? "Proceed" : step === 4 ? "Create my art" : "Next";
+
+    const disabled = !!loading || (screen === "results" ? !canProceed : false);
+
+    window.parent?.postMessage(
+      {
+        type: "NF_STATE",
+        label,
+        disabled,
+        screen,
+        step,
+        step3Stage,
+      },
+      parentOriginRef.current
+    );
+  }, [embedMode, screen, step, step3Stage, loading, canProceed]);
 
   return (
     <div className="max-w-6xl mx-auto px-4 py-8 md:py-10 pb-32">
@@ -797,16 +860,18 @@ export default function CreatePage() {
         </div>
       ) : null}
 
-      <StickyFooter
-        label={screen === "wizard" && step === 4 ? `Create my art` : primaryCtaLabel}
-        onClick={handleNext}
-        loading={loading}
-        disabled={screen === "results" ? !canProceed : false}
-        variant={screen === "results" ? "secondary" : "primary"}
-      />
+      {!embedMode ? (
+        <StickyFooter
+          label={screen === "wizard" && step === 4 ? `Create my art` : primaryCtaLabel}
+          onClick={handleNext}
+          loading={loading}
+          disabled={screen === "results" ? !canProceed : false}
+          variant={screen === "results" ? "secondary" : "primary"}
+        />
+      ) : null}
 
       {/* Keep the little sparkle icon on the step 4 CTA like your original, but in sticky footer */}
-      {screen === "wizard" && step === 4 ? (
+      {!embedMode && screen === "wizard" && step === 4 ? (
         <div className="sr-only">
           <Sparkles />
         </div>
