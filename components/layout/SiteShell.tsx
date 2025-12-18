@@ -14,17 +14,4 @@ export default function SiteShell({ children }: { children: ReactNode }) {
       setShowHeader(false);
     }
   }, []);
-
-  return (
-    <div className="min-h-screen flex flex-col bg-nf-bg">
-      {showHeader ? <SiteHeader /> : null}
-      <main className="flex-1">{children}</main>
-      <footer className="border-t border-nf-border mt-12">
-        <div className="max-w-6xl mx-auto px-4 py-6 text-xs text-nf-text-muted flex flex-col sm:flex-row items-start sm:items-center justify-between gap-2">
-          <span>© {new Date().getFullYear()} nestframe</span>
-          <span>Custom wall art, created in minutes.</span>
-        </div>
-      </footer>
-    </div>
-  );
 }
