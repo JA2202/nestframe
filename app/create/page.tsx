@@ -478,6 +478,11 @@ export default function CreatePage() {
     return () => window.removeEventListener("message", onMessage);
   }, [embedMode]);
 
+  // FIX: Always scroll to top when the visible step/screen changes (improves iframe UX)
+  useEffect(() => {
+    window.scrollTo({ top: 0, left: 0, behavior: "smooth" });
+  }, [screen, step, step3Stage]);
+
   const handleGenerate = async () => {
     setErrorMsg(null);
     setResult(null);
