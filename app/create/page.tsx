@@ -480,8 +480,15 @@ export default function CreatePage() {
 
   // FIX: Always scroll to top when the visible step/screen changes (improves iframe UX)
   useEffect(() => {
+    // Scroll the iframe document to top (useful if the iframe itself is scrollable)
     window.scrollTo({ top: 0, left: 0, behavior: "smooth" });
-  }, [screen, step, step3Stage]);
+
+    // If embedded, also ask the parent (Shopify) to scroll so the top of the iframe is visible
+    if (!embedMode) return;
+
+    window.parent?.postMessage({ type: "NF_SCROLL_TOP" }, parentOriginRef.current);
+  }, [embedMode, screen, step, step3Stage]);
+
 
   const handleGenerate = async () => {
     setErrorMsg(null);
